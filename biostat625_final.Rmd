@@ -376,7 +376,7 @@ Another challenge we encountered is the interpretation of results from non-param
 
 
 # Contribution
-Ziyu Liu: code of all non-parametric model, model comparison and parallel, report writing; Kexin Guo: code of lm model; report writing; Miaojin Hu: code of glm model; report writing
+Ziyu Liu: code of all non-parametric model, model comparison and parallel, data visualization, report writing, github; Kexin Guo: code of lm model, report writing, create table; Miaojin Hu: code of glm model, create table report writing
 
 # Github
 

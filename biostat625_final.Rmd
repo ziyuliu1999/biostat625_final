@@ -378,10 +378,10 @@ Another challenge we encountered is the interpretation of results from non-param
 
 <br>
 
-`Contribution`
+**Contribution**
 
 Ziyu Liu: code of all non-parametric model, model comparison and parallel, data visualization, report writing, github; Kexin Guo: code of lm model, report writing, create table; Miaojin Hu: code of glm model, create table report writing
 
-`Github`
+**Github**
 
 https://github.com/ziyuliu1999/biostat625_final/tree/main

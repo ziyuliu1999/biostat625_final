@@ -14,13 +14,13 @@ We exclude Solar Radiation and Rainfall, Snowfall variables due to too many zero
 
 ## Model used:
 
-\begin{itemize}
-  \item Linear Regression
-  \item Poisson Generalized Linear Regression
-  \item Negative Binomial Generalized Linear Regression
-  \item K-Nearest Neighbor
-  \item Random Forest
-  \item Kernel regression with multiple variables
-\end{itemize}
+
+-item Linear Regression
+-item Poisson Generalized Linear Regression
+-item Negative Binomial Generalized Linear Regression
+-item K-Nearest Neighbor
+-item Random Forest
+-item Kernel regression with multiple variables
+
 
 

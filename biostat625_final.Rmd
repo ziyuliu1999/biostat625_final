@@ -315,7 +315,7 @@ plot_b_df = plot_b_df %>% unnest(MSE)
 plot_b = ggplot(plot_b_df, aes(x = hour, y = MSE, colour = method)) + geom_line() + geom_point()  +  ylab("MSE (log10 scale)") + xlab("hours") + scale_y_continuous(trans = "log10") + scale_x_continuous(breaks= pretty_breaks()) + theme(legend.key.size = unit(0.5, 'cm'))
 ```
 
-```{r fig-all, echo = FALSE, message= FALSE, fig.cap="Different models' performance in different hours"}
+```{r fig-all, echo = FALSE, message= FALSE, fig.cap="Different models' performance in different hours", fig.height=3}
 plot_b
 ```
 
@@ -375,9 +375,13 @@ Another challenge we encountered is the interpretation of results from non-param
 <div id="refs"></div>
 
 
-# Contribution
+
+<br>
+
+`Contribution`
+
 Ziyu Liu: code of all non-parametric model, model comparison and parallel, data visualization, report writing, github; Kexin Guo: code of lm model, report writing, create table; Miaojin Hu: code of glm model, create table report writing
 
-# Github
+`Github`
 
 https://github.com/ziyuliu1999/biostat625_final/tree/main

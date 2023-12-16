@@ -1,0 +1,380 @@
+---
+title: "Seoul Bike Sharing Demand Prediction"
+author: "Ziyu Liu, Kexin Guo, Miaojin Hu"
+output: 
+  bookdown::pdf_document2:
+    number_sections: true
+    toc: false
+fig_caption: yes
+tab_caption: yes
+bibliography: "ref.bib"
+header-includes:
+  - \usepackage{setspace}
+---
+
+
+
+```{r, echo = FALSE, message = FALSE}
+setwd("/Users/ziyuliu/Desktop/biostat625_final/")
+set.seed(1)
+dest = getwd()
+```
+
+
+```{r, echo = FALSE, message= FALSE}
+library(stats)
+library(ggplot2)
+library(tidyverse)
+library(np)
+library(FNN)
+library(randomForest)
+library(parallel)
+library(foreach)
+library(doParallel)
+library(caret)
+library(Matrix)
+library(MASS)
+library(scales)
+library(cowplot)
+library(gridExtra)
+```
+
+
+# Introduction
+Bike-sharing is widely regarded as an environmental-friendly transportation option and is considered to be one of the remedies for both air pollution and traffic congestion[@zhang2021]. However, increasing the utilization rate of shared bikes remains a challenge. Although many studies have focused on the impact of subjective factors on bike leasing[@kaplan2015], there has been limited research on objective factors. This study aims to explore these objective factors. Seoul was chosen as the research focus due to its data being highly representative as an international metropolis. Our analysis will encompass the rental patterns and factors influencing bike usage over a one-year period. This study will provide important guidance for the bike-sharing industry, aiding in the effective allocation of bicycles and the attraction of customers.
+
+# Data
+## Data Description
+This data set comes from Kaggle: https://www.kaggle.com/datasets/joebeachcapital/seoul-bike-sharing/data, which contains the number of bikes rented per hour every day in Seoul from 12/01/2017 to 11/30/2018, as well as weather information (Temperature, Humidity, Wind speed, Visibility, Dew point temperature, Solar radiation, Snowfall, Rainfall).
+
+Table 1 provides a comprehensive overview of the descriptive information of the pre-cleaning data of 8760 hours. For continuous variables, we used mean (standard deviation) to describe; For categorical variables, we used frequency (percent) to describe.
+
+\begin{table}[ht]
+\centering
+
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Characteristics} & \textbf{Overall (n=8760)} \\
+\hline
+Rented bike count & 729.16 (642.35) \\
+\hline
+Hour & 11.51 (6.92) \\
+\hline
+Temperature & 12.77 (12.10) \\
+\hline
+Humidity & 58.15 (20.48) \\
+\hline
+Wind speed (ms) & 1.73 (1.03) \\
+\hline
+Visibility (10m) & 1433.87 (609.05) \\
+\hline
+Dew point temperature & 3.94 (13.24) \\
+\hline
+Solar radiation (MJ.m\textsuperscript{2}) & 0.57 (0.87) \\
+\hline
+Rainfall (mm) & 0.15 (1.13) \\
+\hline
+Snow fall (cm) & 0.08 (0.44) \\
+\hline
+Seasons & \\
+\hline
+Spring & 2208 (25.21\%) \\
+\hline
+Summer & 2208 (25.21\%) \\
+\hline
+Autumn & 2184 (24.93\%) \\
+\hline
+Winter & 2160 (24.65\%) \\
+\hline
+Holiday & \\
+\hline
+Yes & 432 (4.93\%) \\
+\hline
+No & 8328 (95.07\%) \\
+\hline
+Functioning day & \\
+\hline
+Yes & 8465 (96.63\%) \\
+\hline
+No & 295 (3.37\%) \\
+\hline
+\end{tabular}
+\caption{Baseline characteristics overall}
+\end{table}
+
+## Data Pre-processing
+Several critical aspects of our data processing procedure needed to be emphasized. First is that we choose to use the number of rented bikes in multiple hours as the respond, and the rest variables will be considered as the predictors. And then we handle the NA values and outliers to avoid side effects on following model fitting. We also noticed the Functioning day column is a binary variable indicating the availability of shared bikes at specific time of a day, so we do filtering on this variable to exclude unfunctional bikes from our analysis. Additionally, correlation analysis between the predictors was done to avoid the possible effect of multicolliearity. We exclude Solar Radiation and Rainfall, Snowfall variables due to too many zeros. For the rainfall and snowfall, they also closely related with the humidity and temperature. And Dew point temperature and Visibility are removed because of their high-correlation with other covariates, for example temperature. In summary, our approach involves a systematic and rigorous treatment of the data set, ensuring that the selected sample is representative of the whole accessible rental bike population. The careful preprocessing steps and considerations for potential confounders underscore the commitment to methodological robustness and the pursuit of reliable inferential outcomes.
+
+
+
+
+## Methods 
+
+### Model used
+Firstly, assuming a linear relationship between predictors and the expected count, we used linear regression to fit the model. Since the expected count is a non-negative integer variable, the linear regression may not be an ideal model for our situation. So, a Poisson generalized linear regression model was considered. When using a Poisson generalized linear regression model, overdispersion is a possible issue, which means that we need to check the mean and variance among the observations. For example, we used 9 am observations, whose mean is around 668 and variance is around 149,626. The variance is much larger than the mean, so a Poisson distribution may be
+inappropriate here. In this case, a negative binomial distribution might be a better choice. 
+
+Besides the parametric regression, we also consider some non-parametric methods. In the following part, we will use Random Forest(RF), Kernel Regression (KR) with multiple variables, and the K-Nearest Neighbors (KNN). All these models' complexities, underlying assumptions, and interpretabilities should be further considered. 
+
+
+### Tune parameters
+
+For the non-parametric models we mentioned above, tuning parameters is an essential part of the work that makes the model fit well. We separated the data into the training and testing data to find the optimal hyperparameter. We used the 10-fold cross-validation among the training data to find the parameter. KNN needs a hyperparameter K to determine how many neighbors are used to predict. The hyperparameter used in the RF is the number of trees that are used to make the final decision. KR's bandwidth to fit in the local will be determined using the least square cross-validation. We need to know how many times to restart finding the extrema of the least square cross-validation function from different initial points to optimize the bandwidth. We will all use cross-validation to find the optimal value for the K, the number of trees, and the initial points. The metric we use is the mean square error (MSE), which will be used to tune the parameters.
+
+
+
+### Computation enhancement
+
+In our project, we will predict the hour-specific rental counts, which means that we need to fit 24 times for each model. Besides that, cross-validation is also a time-consuming process. So, to conquer the time challenge we will meet, we used the multi-core parallel to complete the project. Firstly, we wrote a demo code with the five hyperparameters for RF and KNN from 0 a.m. to 5 a.m. We run the code both with and without using the parallel. The code without using parallel spent 17.18 seconds, and the code used the parallel spent 3.73 seconds. The parallel enhances the speed significantly. So, for the project, we used the parallel to conquer the computational challenge we met. The device we used is 12-core and 18G memory.
+
+# Results
+
+## Parameter selection
+
+We used 15 hyperparameters for each nonparametric model. The candidate K used in KNN are 1, 6, 11, 16..., 66, 71. The candidate numbers of trees used in random forests are 100, 200, .., 1400, 1500. The candidate initial points used to find the kernel regression bandwidth are 1, 2,..., 14, 15. Figure \@ref(fig:fig-tune) shows how models performed with different hyperparameters. We can see that KNN has the best performance when k = 11, the RF has the best performance when the number of trees is 210, and the kernel regression has the best performance when the number of initial points is 3. So, in the following model comparison, we will use those optimal values to fit in those models.
+
+```{r, echo = FALSE, message= FALSE}
+bikedata <- read.csv("SeoulBikeData.csv")
+bikedata=bikedata %>%
+  filter(Functioning.Day=="Yes")
+```
+
+
+```{r, echo = FALSE, message= FALSE}
+colnames(bikedata)[5] = "Humidity"
+colnames(bikedata)[6] = "Wind.speed"
+bikedata = bikedata[, -c(1, 7, 8, 10, 11, 14, 9)]
+bikedata$Holiday = as.factor(as.numeric(as.factor(bikedata$Holiday)) - 1)
+bikedata$Seasons = as.factor(as.numeric(as.factor(bikedata$Seasons)) - 1)
+# remove NoFunc
+```
+
+
+
+
+
+```{r, echo = FALSE, message= FALSE}
+near_nb = seq(1, 75, 5)
+multi_start = seq(1, 15, 1)
+trees_nmb = seq(10, 1500, 100)
+```
+
+```{r, cache = TRUE, results='hide', echo = FALSE}
+start.time <- Sys.time()
+num_core = detectCores()
+registerDoParallel(num_core)  
+b_mse_df = foreach(h = 0:23, .combine = rbind) %dopar% {
+  peak_hour = bikedata %>% filter(Hour == h)
+  peak_hour = peak_hour[, -2]
+  n = nrow(peak_hour)
+  trn_idx = sample(1:n, floor(0.8 * n))
+  trn_dat = peak_hour[trn_idx, ]
+  tst_dat = peak_hour[-trn_idx, ]
+  avg_rows = floor(nrow(trn_dat) / 10)
+  start_row = 1
+  mse_rf = rep(0, length(trees_nmb))
+  mse_knn = rep(0, length(near_nb))
+  mse_kern = rep(0, length(multi_start))
+  glm_model_9p <- glm(Rented.Bike.Count ~ Temperature + Humidity + Wind.speed + Seasons + Holiday, family = poisson, data = trn_dat)
+  predict_glm_9p <- predict(glm_model_9p, newdata = tst_dat, type = "response")
+  residuals_glm_9p <- tst_dat$Rented.Bike.Count - predict_glm_9p
+  mse_glm_p <- mean(residuals_glm_9p^2)
+  lm_reg = lm(Rented.Bike.Count ~ Temperature + Humidity + Wind.speed + Seasons + Holiday, data = trn_dat)
+  predict_lm = predict(lm_reg, tst_dat)
+  residuals_tst = tst_dat$Rented.Bike.Count - predict_lm
+  mse_lm = mean(residuals_tst^2)
+  glm_model_9nb <- glm.nb(Rented.Bike.Count ~ Temperature + Humidity + Wind.speed + Seasons + Holiday, data = trn_dat)
+  predict_glm_9nb <- predict(glm_model_9nb, newdata = tst_dat, type = "response")
+  residuals_glm_9nb <- tst_dat$Rented.Bike.Count - predict_glm_9nb
+  mse_glm_nb <- mean(residuals_glm_9nb^2)
+  for (i in 1:10) {
+    val_idx = start_row:(start_row + avg_rows - 1)
+    if (i == 10) { 
+      val_idx = start_row:nrow(trn_dat)
+    }
+    validation = trn_dat[val_idx, ]
+    estimation = trn_dat[-val_idx, ]
+    y_val = validation[, 1]
+    x_val = validation[, -1]
+    y_est = estimation[, 1]
+    x_est = estimation[, -1]
+    for (j in 1:length(trees_nmb)) {
+      nn = near_nb[j]
+      nmul = multi_start[j]
+      treen = trees_nmb[j]
+      knn_fit = knnreg(x_est, y_est, k = nn)
+      y_knn = predict(knn_fit, x_val)
+      mse_knn[j] = mse_knn[j] + mean((y_knn - y_val)^2)
+      rf_fit = randomForest(x = x_est, y = y_est, ntree = treen)
+      y_rf = predict(rf_fit, x_val)
+      mse_rf[j] = mse_rf[j] + mean((y_rf - y_val)^2)
+      bws = npregbw(formula = Rented.Bike.Count ~ Temperature + Humidity + Wind.speed + Seasons + Holiday, data = validation, nmulti = nmul)
+      fit_kern = npreg(bws)
+      pre_kern = predict(fit_kern, newdata = estimation)
+      mse_kern[j] = mse_kern[j] + mean((pre_kern - estimation[,1])^2)
+    }
+    start_row = start_row + avg_rows
+  }
+  mse_cv_knn = mse_knn/10
+  mse_cv_rf = mse_rf/10
+  mse_cv_ker = mse_kern/10
+  saveRDS(mse_cv_knn, file = paste0(dest, "/", as.character(h),"_mse_knn.RDS"))
+  saveRDS(mse_cv_rf, file = paste0(dest,"/",as.character(h), "_mse_rf.RDS"))
+  saveRDS(mse_cv_ker, file = paste0(dest,"/",as.character(h), "_mse_ker.RDS"))
+  nnn = near_nb[which.min(mse_cv_knn)]
+  tree_n = trees_nmb[which.min(mse_cv_rf)]
+  multi_n = multi_start[which.min(mse_cv_ker)]
+  knn_trn = knnreg(trn_dat[, -1], trn_dat[, 1], k = nnn)
+  tst_y = predict(knn_trn, tst_dat[, -1])
+  mse_knn = mean((tst_y - tst_dat[, 1])^2)
+  rf_trn = randomForest(trn_dat[, -1], trn_dat[, 1], ntree = tree_n)
+  tst_rf = predict(rf_trn, tst_dat[, -1])
+  mse_rf = mean((tst_rf - tst_dat[, 1])^2)
+  bws_trn = npregbw(formula = Rented.Bike.Count ~ Temperature + Humidity + Wind.speed + Seasons + Holiday, data = trn_dat, nmulti = multi_n)
+  kern_fit = npreg(bws_trn)
+  tst_kern = predict(kern_fit, newdata = tst_dat)
+  mse_kern = mean((tst_kern - tst_dat[, 1])^2)
+  return(list(mse_knn = mse_knn, mse_rf = mse_rf, mse_kern = mse_kern, mse_lm = mse_lm, mse_glm_p = mse_glm_p, mse_glm_nb = mse_glm_nb, nnn = nnn, tree_n = tree_n, multi_n = multi_n))
+}
+end.time <- Sys.time()
+time.taken <- round(end.time - start.time,2)
+stopImplicitCluster()
+```
+
+
+```{r, echo = FALSE, message= FALSE}
+hour_list = 0:23
+knn_df = c()
+rf_df = c()
+kern_df = c()
+for (i in hour_list) {
+  hr_knn = readRDS(paste0(dest,"/",as.character(i), "_mse_knn.RDS"))
+  knn_df = cbind(knn_df, hr_knn)
+  hr_rf = readRDS(paste0(dest,"/",as.character(i), "_mse_rf.RDS"))
+  rf_df = cbind(rf_df, hr_rf)
+  hr_kern = readRDS(paste0(dest,"/",as.character(i), "_mse_knn.RDS"))
+  kern_df = cbind(kern_df, hr_kern)
+}
+```
+
+```{r, echo = FALSE, message= FALSE}
+t_list = unlist(0:23)
+colnames(knn_df) = t_list
+colnames(rf_df) = t_list
+colnames(kern_df) = t_list
+knn_df = as.data.frame(knn_df)
+rf_df = as.data.frame(rf_df)
+kern_df = as.data.frame(kern_df)
+plot_data_knn = gather(knn_df, key = "hour", value = "MSE", 1:24)
+plot_data_rf = gather(rf_df, key = "hour", value = "MSE", 1:24)
+plot_data_kern = gather(kern_df, key = "hour", value = "MSE", 1:24)
+```
+
+```{r, echo = FALSE, message= FALSE}
+plot_data_knn$par = rep(near_nb, 24)
+plot_data_rf$par = rep(trees_nmb, 24)
+plot_data_kern$par = rep(multi_start, 24)
+```
+
+```{r, echo = FALSE, message= FALSE}
+plot_knn = ggplot(plot_data_knn, aes(x = par, y = MSE, colour = hour)) + geom_line() + geom_point()  +  ylab("MSE (log10 scale)") + xlab("K")  + scale_y_continuous(trans = "log10", labels = label_comma())
+```
+
+```{r, echo = FALSE, message= FALSE}
+plot_rf = ggplot(plot_data_rf, aes(x = par, y = MSE, colour = hour)) + geom_line() + geom_point()  +  ylab("") + xlab("tree numbers") + scale_y_continuous(trans = "log10", labels = label_comma())
+```
+
+```{r, echo = FALSE, message= FALSE}
+plot_kern = ggplot(plot_data_kern, aes(x = par, y = MSE, colour = hour)) + geom_line() + geom_point()  +  ylab("") + xlab("number of initial points") + scale_y_continuous(trans = "log10", labels = label_comma())
+```
+
+```{r fig-tune, echo = FALSE, fig.height= 4, fig.width=10, fig.cap = "Tune the parameter for different model. The left one is the cross validation results used to tune the K neighbors used to fit in the KNN model, the middle one is the cross-validation used to tune number of trees used to fit the Random Forest, and the right one is the cross validation results used to tune the number of initial values to fit the kernel regression model"}
+leg = get_legend(plot_rf)
+grid.arrange(plot_knn+theme(legend.position = 'hidden'), plot_rf+theme(legend.position = 'hidden'), plot_kern+theme(legend.position = 'hidden'), leg, nrow = 1, ncol = 4, widths = c(3, 3, 3, 1))
+```
+
+## Model comparison 
+Figure \@ref(fig:fig-all) displays Mean Squared Error (MSE) on a log scale for different predictive models across different hours. Model performance varies throughout the day, reflecting changing data patterns such as variability with the time of day. No single model consistently outperforms the others across all hours, but there are some general trends: The "Kern Regression" (Kernel Regression) and "RF" (Random Forest) models appear to perform similarly across the day, with MSE values that fluctuate but remain in the middle range compared to the other models. Lowest MSE occurs around hour 5, rising until hour 10, with a general increase towards day's end. No clear "best" model emerges, rather, the choice of model might depend on the specific hour of the day. For instance, at hour 5, "KNN" or "LM" might be preferred for their lower MSE. It's also important to note that while MSE is a useful metric for comparison, it doesn't capture all aspects of model performance, such as bias-variance tradeoff, model complexity, or interpretability.
+
+
+
+```{r, echo = FALSE, message= FALSE}
+colnames(b_mse_df)[1:6] = c("KNN", "RF", "Kern Regression", "LM", "Poisson GLM", "NB GLM")
+plot_b_df = gather(as.data.frame(b_mse_df), key = "method", value = "MSE", 1:6)
+```
+
+```{r, echo = FALSE, message= FALSE}
+plot_b_df$hour = rep(0:23, 6)
+```
+
+```{r, echo = FALSE, message= FALSE}
+plot_b_df = plot_b_df %>% unnest(MSE)
+```
+
+```{r, echo = FALSE, message= FALSE}
+plot_b = ggplot(plot_b_df, aes(x = hour, y = MSE, colour = method)) + geom_line() + geom_point()  +  ylab("MSE (log10 scale)") + xlab("hours") + scale_y_continuous(trans = "log10") + scale_x_continuous(breaks= pretty_breaks()) + theme(legend.key.size = unit(0.5, 'cm'))
+```
+
+```{r fig-all, echo = FALSE, message= FALSE, fig.cap="Different models' performance in different hours"}
+plot_b
+```
+
+
+## Interpretation
+Based on the results, we found that the KNN model and Kernel Regression model performed better. In this case, we may good to predict the results using those two models. However, as a common issue for the nonparametric model compared with the parametric models, the non-parametric model is hard to interpret. So, we decided to chose the linear regression model, which also performs well, to interpret. In this paper, we will use 5 a.m. as an example to see how the linear regression fits the data in Table 2; different hours may have different coefficients. The linear regression model showed that temperature, humidity, wind speed, seasons, and Holidays are the five main factors affecting bicycle rentals(p<.0.5, respectively). Specifically, temperature has a significant positive effect on the number of bicycles rented, meaning that the number of bicycles rented typically increases as the temperature rises. Conversely, humidity generally has a negative effect on the number of bicycles rented, meaning that high humidity may reduce people's willingness to rent bicycles. Wind speed also has an effect on bike rentals at certain times of the year. In addition, seasons and holidays can also have a significant impact on bicycle rentals.
+
+
+```{r, echo = FALSE}
+peak_hour = bikedata %>% filter(Hour == 5)
+peak_hour = peak_hour[, -2]
+lm_reg = lm(Rented.Bike.Count ~ Temperature + Humidity + Wind.speed + Seasons + Holiday, data = peak_hour)
+```
+
+\begin{table}
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+ & Estimate & Pr(>|t|) \\
+\hline
+(Intercept) & 185.05 & 9.255908e-19\\
+\hline
+Temperature & 3.62 & 1.732835e-10 \\
+\hline
+Humidity & -1.08 & 1.480361e-09 \\
+\hline
+Wind speed &   -11.71 & 2.907788e-03 \\
+\hline
+Spring & -43.36 & 3.734985e-07 \\
+\hline
+Summer & 41.91 & 1.211326e-04 \\
+\hline
+Winter & -64.24 & 1.069984e-07 \\
+\hline 
+No holiday & 30.11 & 2.729474e-02\\
+\hline
+\end{tabular}
+\caption{\label{tab:coef_tab} This table shows 5am linear regression coefficients and p values}
+\end{center}
+\end{table}
+
+
+
+# Discussion
+In conclusion, these models reveal how multiple factors influence sharing-bike rentals. For example, days with warmer temperatures, lower humidity, and moderate wind speeds may have more bike rental activity, especially on non-holiday days and during certain specific seasons. This information can be very useful for city planners and bike share service providers to better understand and forecast bike rental demand.
+
+Our program has many significant advantages: first, unlike many studies that focus only on peak hours, our study covers 24-hour bike rentals, providing a more comprehensive guidance to the bike-sharing service industry; Second, we used parallel programming techniques, which drastically reduced the running time of the program, improving the overall efficiency.
+
+Nevertheless, our study has some limitations. In particular, the mean square errors of all six models were relatively large, suggesting that these all six models did not fit very well. Therefore, in future studies, we plan to explore more different models to improve the predictive power and accuracy.
+
+Our current code running time using the local 12-core 18G memory device is 2.15 mins. In our quest to enhance the performance of our model, we have always been attempted to leverage parallel computation by utilizing more cores, with a notable example being the integration of up to 36 cores in a server named Greatlakes. However, we faced with a setback as the server consistently operated crowded at high capacity, causing delays in the queue. Despite this, we acknowledge the potential benefits of employing more cores for parallel computation, and remain committed to exploring the Greatlakes server in the future, once it becomes more accessible and less congested.
+
+Another challenge we encountered is the interpretation of results from non-parametric models. Given the lack of interpretable parameters, non-parametric models reach results through patterns and relationships in the data, typically relying on distance metrics or similarities between data points, making it difficult to understand the influence of specific features on the model's predictions. For future improvement strategies, feature importance analysis can be employed. By assessing the contribution of each feature to the model's predictions, insights into which variables are more influential can thus be gained.
+
+# References
+
+<div id="refs"></div>
+
+
+# Contribution
+Ziyu Liu: code of all non-parametric model, model comparison and parallel, report writing; Kexin Guo: code of lm model; report writing; Miaojin Hu: code of glm model; report writing
+

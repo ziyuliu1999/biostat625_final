@@ -15,12 +15,12 @@ We exclude Solar Radiation and Rainfall, Snowfall variables due to too many zero
 ## Model used:
 
 
--item Linear Regression
--item Poisson Generalized Linear Regression
--item Negative Binomial Generalized Linear Regression
--item K-Nearest Neighbor
--item Random Forest
--item Kernel regression with multiple variables
+*item Linear Regression
+*item Poisson Generalized Linear Regression
+*item Negative Binomial Generalized Linear Regression
+*item K-Nearest Neighbor
+*item Random Forest
+*item Kernel regression with multiple variables
 
 
 
